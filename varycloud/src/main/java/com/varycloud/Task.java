@@ -1,6 +1,5 @@
-package com.ocsp.sodino.dns_ocsp;
+package com.varycloud;
 
-import java.io.File;
 import java.util.LinkedList;
 
 /**

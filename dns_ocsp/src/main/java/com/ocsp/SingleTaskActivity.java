@@ -1,4 +1,4 @@
-package com.ocsp.sodino.dns_ocsp;
+package com.ocsp;
 
 import android.os.Build;
 import android.os.Bundle;
@@ -10,17 +10,25 @@ import android.util.Log;
 import android.util.SparseLongArray;
 import android.view.View;
 import android.widget.Button;
-import android.widget.CheckBox;
 import android.widget.TextView;
 
-import java.io.File;
-import java.net.HttpURLConnection;
+import com.ocsp.sodino.dns_ocsp.R;
+
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
 import java.util.Arrays;
-import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
+
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 
 import okhttp3.Call;
 import okhttp3.Dns;
@@ -29,25 +37,24 @@ import okhttp3.Request;
 import okhttp3.Response;
 
 @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN_MR2)
-public class MixTaskActivity extends AppCompatActivity implements Dns ,View.OnClickListener, Handler.Callback {
+public class SingleTaskActivity extends AppCompatActivity implements Dns, View.OnClickListener, Handler.Callback {
 
     private OkHttpClient client;
 
+    private SparseLongArray arr = new SparseLongArray();
+    private long max, min, sum;
+    private float average;
     private TextView txtInfo;
     private Button btnStart, btnStop;
     private boolean going;
-    private boolean isOcspHost = false;
-
-    private Task taskNormal = new Task();
-    private Task taskOcsp = new Task();
+    private LinkedList<String> listResult = new LinkedList<>();
 
     private Handler handler = new Handler(this);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_mix);
-
+        setContentView(R.layout.activity_single);
 
         btnStart = (Button) findViewById(R.id.btnStart);
         btnStart.setOnClickListener(this);
@@ -63,11 +70,45 @@ public class MixTaskActivity extends AppCompatActivity implements Dns ,View.OnCl
     }
 
     private void initOkHttpClient() {
+
+        final X509TrustManager trustManager = new X509TrustManager() {
+            @Override
+            public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+
+            }
+
+            @Override
+            public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+
+            }
+
+            @Override
+            public X509Certificate[] getAcceptedIssuers() {
+                return new X509Certificate[0];
+            }
+        };
+
+        SSLSocketFactory sslSocketFactory = null;
+        try {
+            SSLContext sslContext = SSLContext.getInstance("SSL");
+            sslContext.init(null, new TrustManager[]{trustManager}, new SecureRandom());
+            sslSocketFactory = sslContext.getSocketFactory();
+        } catch (KeyManagementException e) {
+            e.printStackTrace();
+        } catch (NoSuchAlgorithmException e) {
+            e.printStackTrace();
+        }
+
+
         OkHttpClient.Builder builder = new OkHttpClient().newBuilder();
         builder.dns(this);
+        builder.sslSocketFactory(sslSocketFactory, trustManager);
+
         client = builder.build();
+
     }
 
+    @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN_MR2)
     @Override
     public void onClick(View v) {
         switch (v.getId()) {
@@ -75,8 +116,9 @@ public class MixTaskActivity extends AppCompatActivity implements Dns ,View.OnCl
                 btnStart.setVisibility(View.GONE);
                 btnStop.setVisibility(View.VISIBLE);
                 going = true;
-                taskNormal.clear();
-                taskOcsp.clear();
+                sum = max = min = 0;
+                average = 0.0f;
+                arr.clear();
                 reqGetUrl();
 
                 handler.sendEmptyMessageDelayed(Constant.MSG_REFRESH, 1000);
@@ -97,20 +139,18 @@ public class MixTaskActivity extends AppCompatActivity implements Dns ,View.OnCl
             public void run() {
                 int i = 0;
                 Log.d("Test", "start looping...");
-                while (i < Constant.LOOP_COUNT * 2 && going) {
-                    i ++;
-                    isOcspHost = !isOcspHost;
+                while (i < Constant.LOOP_COUNT && going) {
+                    i++;
                     boolean result = runReq();
                     if (!result) {
                         i--;
                     }
-                    try {
-                        Thread.sleep(100*3);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
                 }
-
+                try {
+                    Thread.sleep(300);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
                 handler.sendEmptyMessage(Constant.MSG_DONE);
                 Log.d("Test", "end looping...");
             }
@@ -118,7 +158,10 @@ public class MixTaskActivity extends AppCompatActivity implements Dns ,View.OnCl
     }
 
     private boolean runReq() {
-        Request request = new Request.Builder().url(Constant.URL).build();
+//        Request request = new Request.Builder().url(Constant.URL_normal)
+        Request request = new Request.Builder().url("https://g.alicdn.com/s.gif")
+                .addHeader("Connection", "Close")
+                .build();
         Response response = null;
         try {
             Call call = client.newCall(request);
@@ -126,28 +169,15 @@ public class MixTaskActivity extends AppCompatActivity implements Dns ,View.OnCl
             long timeStart = System.currentTimeMillis();
             response = call.execute();
             long consume = System.currentTimeMillis() - timeStart;
-            if (response.code() == HttpURLConnection.HTTP_BAD_REQUEST){
+            int code = response.code();
+
+            String httpProtocol = String.valueOf(response.protocol());
+            Log.d("Test", "code=" + code + " httpProtocol=" + httpProtocol);
+            if (code == Constant.URL_RESP_CODE) {
                 //String str = response.body().string();
 
-                StringBuilder sb = new StringBuilder();
                 //Log.d("Test", "consume=" + consume);
-                String logName = Constant.LOG_NORMAL_HOST;
-                if (isOcspHost) {
-                    taskOcsp.addBean(new ReqBean(isOcspHost, timeStart, consume));
-                    logName = Constant.LOG_OCSP_HOST;
-                    sb.append(taskOcsp.list.size()).append("   ")
-                            .append(taskOcsp.average).append("   ");
-                } else {
-                    taskNormal.addBean(new ReqBean(isOcspHost, timeStart, consume));
-                    sb.append(taskNormal.list.size()).append("   ")
-                            .append(taskNormal.average).append("   ");
-                }
-
-                sb.append(Constant.DATE_FORMAT.format(new Date(timeStart))).append("   ")
-                        .append(consume);
-
-                String line = sb.toString();
-                FileUtil.write(line, Constant.LOG_FOLDER, logName);
+                calcTime(consume);
                 return true;
             } else {
                 return false;
@@ -156,36 +186,42 @@ public class MixTaskActivity extends AppCompatActivity implements Dns ,View.OnCl
             e.printStackTrace();
             return false;
         } finally {
-            if (response != null){
+            if (response != null) {
                 response.close();
             }
         }
     }
 
+    private void calcTime(long consume) {
+        arr.append(arr.size(), consume);
+        if (consume > max) {
+            max = consume;
+        }
+
+        if (consume < min || min == 0) {
+            min = consume;
+        }
+
+
+        sum += consume;
+
+        average = sum * 1.0f / arr.size();
+    }
 
     @Override
     public boolean handleMessage(Message msg) {
-        switch(msg.what){
-            case Constant.MSG_DONE:{
+        switch (msg.what) {
+            case Constant.MSG_DONE: {
                 going = false;
                 btnStop.setVisibility(View.GONE);
                 btnStart.setVisibility(View.VISIBLE);
 
                 StringBuilder sb = new StringBuilder();
 
-                sb.append("normal host").append("\t").append(taskNormal.list.size()).append("\n")
-                        .append(" sum:").append(taskNormal.sum)
-                        .append(" avg:").append(taskNormal.average)
-                        .append(" min:").append(taskNormal.getMinConsume())
-                        .append(" max:").append(taskNormal.getMaxConsume());
-                sb.append("\n");
-                sb.append("OCSP host").append("\t").append(taskOcsp.list.size()).append("\n")
-                        .append(" sum:").append(taskOcsp.sum)
-                        .append(" avg:").append(taskOcsp.average)
-                        .append(" min:").append(taskOcsp.getMinConsume())
-                        .append(" max:").append(taskOcsp.getMaxConsume());
-                sb.append("\n");
-                sb.append("\n");
+                sb.append("\nsum:" + sum);
+                sb.append(" average:" + average);
+                sb.append(" min:" + min + " max:" + max);
+                sb.append("\n\n");
 
 
                 String strOld = txtInfo.getText().toString();
@@ -203,7 +239,7 @@ public class MixTaskActivity extends AppCompatActivity implements Dns ,View.OnCl
                 txtInfo.append(strOld);
             }
             break;
-            case Constant.MSG_REFRESH:{
+            case Constant.MSG_REFRESH: {
                 handler.removeMessages(Constant.MSG_REFRESH);
                 if (!going) {
                     // 任务结束就不再显示进度了
@@ -211,21 +247,12 @@ public class MixTaskActivity extends AppCompatActivity implements Dns ,View.OnCl
                 }
                 StringBuilder sb = new StringBuilder();
 
-                sb.append("going....\n");
-                sb.append("normal  \n")
-                        //.append(" sum:").append(taskNormal.sum)
-                        .append("idx:" + taskNormal.list.size())
-                        .append(" avg:").append(taskNormal.average)
-                        .append(" min:").append(taskNormal.getMinConsume())
-                        .append(" max:").append(taskNormal.getMaxConsume());
-                sb.append("\n");
-                sb.append("OCSP \n")
-                        //.append(" sum:").append(taskOcsp.sum)
-                        .append("idx:" + taskOcsp.list.size())
-                        .append(" avg:").append(taskOcsp.average)
-                        .append(" min:").append(taskOcsp.getMinConsume())
-                        .append(" max:").append(taskOcsp.getMaxConsume());
-                sb.append("\n").append(Constant.LINE_DIVIDE).append("\n");
+                sb.append("going ... \n");
+                sb.append("\nidx:" + (arr.size() + 1) + " count:" + Constant.LOOP_COUNT);
+                sb.append("\nsum:" + sum);
+                sb.append("\naverage:" + average);
+                sb.append("\nmin:" + min + " max:" + max);
+                sb.append("\n" + Constant.LINE_DIVIDE + "\n");
 
                 String strOld = txtInfo.getText().toString();
 
@@ -240,21 +267,22 @@ public class MixTaskActivity extends AppCompatActivity implements Dns ,View.OnCl
                 }
 
                 txtInfo.setText(sb.toString());
+                txtInfo.setText(sb.toString());
 
                 txtInfo.append(strOld);
 
 
                 handler.sendEmptyMessageDelayed(Constant.MSG_REFRESH, 1000);
-            }break;
+            }
+            break;
         }
         return true;
     }
 
     @Override
     public List<InetAddress> lookup(String hostname) throws UnknownHostException {
-        if ("api.meipai.com".equals(hostname)) {
-
-            String ip = isOcspHost ? Constant.HOST_ocsp_IP : Constant.HOST_IP;
+        if ("beizimu.com".equals(hostname)) {
+            String ip = "120.24.48.119";
 
             List<InetAddress> inetAddresses =
                     Arrays.asList(InetAddress.getAllByName(ip));
@@ -263,4 +291,5 @@ public class MixTaskActivity extends AppCompatActivity implements Dns ,View.OnCl
             return SYSTEM.lookup(hostname);
         }
     }
+
 }

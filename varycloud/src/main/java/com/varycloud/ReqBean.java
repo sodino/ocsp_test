@@ -1,4 +1,4 @@
-package com.ocsp.sodino.dns_ocsp;
+package com.varycloud;
 
 import java.util.Date;
 

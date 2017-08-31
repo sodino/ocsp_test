@@ -1,23 +1,24 @@
-package com.ocsp.sodino.dns_ocsp;
+package com.varycloud;
 
+import android.Manifest;
+import android.app.Activity;
+import android.content.pm.PackageManager;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
 import android.support.annotation.RequiresApi;
+import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
-import android.os.Bundle;
 import android.util.Log;
-import android.util.SparseLongArray;
 import android.view.View;
 import android.widget.Button;
-import android.widget.CheckBox;
 import android.widget.TextView;
 
-import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Arrays;
-import java.util.LinkedList;
+import java.util.Date;
 import java.util.List;
 
 import okhttp3.Call;
@@ -27,25 +28,24 @@ import okhttp3.Request;
 import okhttp3.Response;
 
 @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN_MR2)
-public class SingleTaskActivity extends AppCompatActivity implements Dns ,View.OnClickListener, Handler.Callback {
+public class BatchTaskActivity extends AppCompatActivity implements View.OnClickListener, Handler.Callback {
 
     private OkHttpClient client;
 
-    private SparseLongArray arr = new SparseLongArray();
-    private long max, min, sum;
-    private float average;
     private TextView txtInfo;
     private Button btnStart, btnStop;
-    private CheckBox checkBox;
     private boolean going;
-    private LinkedList<String> listResult = new LinkedList<>();
+
+    private Task taskNormal = new Task();
 
     private Handler handler = new Handler(this);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_single);
+        verifyStoragePermissions(this);
+
+        setContentView(R.layout.activity_mix);
 
 
         btnStart = (Button) findViewById(R.id.btnStart);
@@ -56,17 +56,42 @@ public class SingleTaskActivity extends AppCompatActivity implements Dns ,View.O
         btnStop = (Button) findViewById(R.id.btnStop);
         btnStop.setOnClickListener(this);
 
-        checkBox = (CheckBox) findViewById(R.id.checkBox);
-
         txtInfo = (TextView) findViewById(R.id.txtInfo);
 
-
         initOkHttpClient();
+
+    }
+
+    // Storage Permissions
+    private static final int REQUEST_EXTERNAL_STORAGE = 1;
+    private static String[] PERMISSIONS_STORAGE = {
+            Manifest.permission.READ_EXTERNAL_STORAGE,
+            Manifest.permission.WRITE_EXTERNAL_STORAGE
+    };
+
+    /**
+     * Checks if the app has permission to write to device storage
+     *
+     * If the app does not has permission then the user will be prompted to grant permissions
+     *
+     * @param activity
+     */
+    public static void verifyStoragePermissions(Activity activity) {
+        // Check if we have write permission
+        int permission = ActivityCompat.checkSelfPermission(activity, Manifest.permission.WRITE_EXTERNAL_STORAGE);
+
+        if (permission != PackageManager.PERMISSION_GRANTED) {
+            // We don't have permission so prompt the user
+            ActivityCompat.requestPermissions(
+                    activity,
+                    PERMISSIONS_STORAGE,
+                    REQUEST_EXTERNAL_STORAGE
+            );
+        }
     }
 
     private void initOkHttpClient() {
         OkHttpClient.Builder builder = new OkHttpClient().newBuilder();
-        builder.dns(this);
         client = builder.build();
     }
 
@@ -77,9 +102,7 @@ public class SingleTaskActivity extends AppCompatActivity implements Dns ,View.O
                 btnStart.setVisibility(View.GONE);
                 btnStop.setVisibility(View.VISIBLE);
                 going = true;
-                sum = max = min = 0;
-                average = 0.0f;
-                arr.clear();
+                taskNormal.clear();
                 reqGetUrl();
 
                 handler.sendEmptyMessageDelayed(Constant.MSG_REFRESH, 1000);
@@ -106,12 +129,13 @@ public class SingleTaskActivity extends AppCompatActivity implements Dns ,View.O
                     if (!result) {
                         i--;
                     }
+                    try {
+                        Thread.sleep(100*3);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
                 }
-                try {
-                    Thread.sleep(300);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
+
                 handler.sendEmptyMessage(Constant.MSG_DONE);
                 Log.d("Test", "end looping...");
             }
@@ -119,7 +143,7 @@ public class SingleTaskActivity extends AppCompatActivity implements Dns ,View.O
     }
 
     private boolean runReq() {
-        Request request = new Request.Builder().url(Constant.URL).build();
+        Request request = new Request.Builder().url(Constant.URL).addHeader("Connection", "Close").build();
         Response response = null;
         try {
             Call call = client.newCall(request);
@@ -127,11 +151,21 @@ public class SingleTaskActivity extends AppCompatActivity implements Dns ,View.O
             long timeStart = System.currentTimeMillis();
             response = call.execute();
             long consume = System.currentTimeMillis() - timeStart;
-            if (response.code() == HttpURLConnection.HTTP_BAD_REQUEST){
+            if (response.code() == Constant.URL_RESP_CODE){
                 //String str = response.body().string();
 
+                StringBuilder sb = new StringBuilder();
                 //Log.d("Test", "consume=" + consume);
-                calcTime(consume);
+                String logName = Constant.LOG_NORMAL_HOST;
+                taskNormal.addBean(new ReqBean(false, timeStart, consume));
+                sb.append(taskNormal.list.size()).append("   ")
+                        .append(taskNormal.average).append("   ");
+
+                sb.append(Constant.DATE_FORMAT.format(new Date(timeStart))).append("   ")
+                        .append(consume);
+
+                String line = sb.toString();
+                FileUtil.write(line, Constant.LOG_FOLDER, logName);
                 return true;
             } else {
                 return false;
@@ -146,21 +180,6 @@ public class SingleTaskActivity extends AppCompatActivity implements Dns ,View.O
         }
     }
 
-    private void calcTime(long consume) {
-        arr.append(arr.size(), consume);
-        if (consume > max) {
-            max = consume;
-        }
-
-        if (consume < min || min == 0) {
-            min = consume;
-        }
-
-
-        sum += consume;
-
-        average = sum * 1.0f / arr.size();
-    }
 
     @Override
     public boolean handleMessage(Message msg) {
@@ -172,11 +191,13 @@ public class SingleTaskActivity extends AppCompatActivity implements Dns ,View.O
 
                 StringBuilder sb = new StringBuilder();
 
-                sb.append(checkBox.isChecked() ? "OCSP " + Constant.HOST_ocsp_IP : Constant.HOST_IP);
-                sb.append("\nsum:" + sum);
-                sb.append(" average:" + average);
-                sb.append(" min:" + min + " max:" + max);
-                sb.append("\n\n");
+                sb.append("normal host").append("\t").append(taskNormal.list.size()).append("\n")
+                        .append(" sum:").append(taskNormal.sum)
+                        .append(" avg:").append(taskNormal.average)
+                        .append(" min:").append(taskNormal.getMinConsume())
+                        .append(" max:").append(taskNormal.getMaxConsume());
+                sb.append("\n");
+                sb.append("\n");
 
 
                 String strOld = txtInfo.getText().toString();
@@ -202,13 +223,15 @@ public class SingleTaskActivity extends AppCompatActivity implements Dns ,View.O
                 }
                 StringBuilder sb = new StringBuilder();
 
-                sb.append("going ... \n");
-                sb.append(checkBox.isChecked() ? "OCSP " + Constant.HOST_ocsp_IP : Constant.HOST_IP);
-                sb.append("\nidx:" + (arr.size() + 1) + " count:"+Constant.LOOP_COUNT);
-                sb.append("\nsum:" + sum);
-                sb.append("\naverage:" + average);
-                sb.append("\nmin:" + min + " max:" + max);
-                sb.append("\n" + Constant.LINE_DIVIDE + "\n");
+                sb.append("going....\n");
+                sb.append("normal  \n")
+                        //.append(" sum:").append(taskNormal.sum)
+                        .append("idx:" + taskNormal.list.size())
+                        .append(" avg:").append(taskNormal.average)
+                        .append(" min:").append(taskNormal.getMinConsume())
+                        .append(" max:").append(taskNormal.getMaxConsume());
+                sb.append("\n");
+                sb.append("\n").append(Constant.LINE_DIVIDE).append("\n");
 
                 String strOld = txtInfo.getText().toString();
 
@@ -223,27 +246,12 @@ public class SingleTaskActivity extends AppCompatActivity implements Dns ,View.O
                 }
 
                 txtInfo.setText(sb.toString());
-                txtInfo.setText(sb.toString());
 
                 txtInfo.append(strOld);
-
 
                 handler.sendEmptyMessageDelayed(Constant.MSG_REFRESH, 1000);
             }break;
         }
         return true;
-    }
-
-    @Override
-    public List<InetAddress> lookup(String hostname) throws UnknownHostException {
-        if ("api.meipai.com".equals(hostname)) {
-            String ip = checkBox.isChecked() ? Constant.HOST_ocsp_IP : Constant.HOST_IP;
-
-            List<InetAddress> inetAddresses =
-                    Arrays.asList(InetAddress.getAllByName(ip));
-            return inetAddresses;
-        } else {
-            return SYSTEM.lookup(hostname);
-        }
     }
 }

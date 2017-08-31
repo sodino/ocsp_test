@@ -13,7 +13,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:id="@+id/btnStart"
-            android:text="Start(1000)"
+            android:text="Start"
             android:textAllCaps="false"/>
         <Button
             android:layout_width="match_parent"

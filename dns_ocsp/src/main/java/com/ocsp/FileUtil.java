@@ -1,4 +1,4 @@
-package com.ocsp.sodino.dns_ocsp;
+package com.ocsp;
 
 import android.os.Environment;
 import android.support.annotation.NonNull;
@@ -42,8 +42,7 @@ public class FileUtil {
                 folderPath = Environment.getExternalStorageDirectory()
                         + File.separator;
             } else {
-                folderPath = Environment.getExternalStorageDirectory()
-                        + File.separator + folder + File.separator;
+                folderPath = "/sdcard/"+ folder + File.separator;
             }
         } else {
             return;
@@ -51,7 +50,8 @@ public class FileUtil {
 
         File fileDir = new File(folderPath);
         if (!fileDir.exists()) {
-            if (!fileDir.mkdirs()) {
+            boolean result = fileDir.mkdirs();
+            if (!result) {
                 return;
             }
         }
