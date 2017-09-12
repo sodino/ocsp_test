@@ -13,9 +13,19 @@ import android.widget.TextView;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.security.SecureRandom;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
+
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSession;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 
 import okhttp3.Call;
 import okhttp3.Dns;
@@ -25,7 +35,7 @@ import okhttp3.Response;
 
 public class MainActivity extends AppCompatActivity implements View.OnClickListener, Dns {
 
-    private static final int COUNT = 1000;
+    private static final int COUNT = 10;
 
     private EditText editName, editUrl, editIP;
     private Button btnAdd, btnRun, btnStop;
@@ -47,9 +57,40 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
         editName = (EditText) findViewById(R.id.editName);
         editUrl = (EditText) findViewById(R.id.editUrl);
-        editUrl.setText("https://api.meipai.com/hot/feed_timeline.json?page=7&guid=acb36d064aaad40284e786cd13e7ec08&language=zh-Hans%20&client_id=1089857302&device_id=869540023395705&version=6300%20&channel=QQ&model=m2+note&os=5.1&origin_channel=QQ&locale=1%20&imei=869540023395705&mac=68%3A3e%3A34%3Aba%3Abe%3A0a%20&android_id=49f7033a2b5a6219&ab_codes=%5B0%5D%20&sig=e720de11552b94ca8100ed85e02692be&sigVersion=1.3&sigTime=1503478865115");
         editIP = (EditText) findViewById(R.id.editIP);
-        editIP.setText("27.155.71.172");
+
+//        editName.setText("http2");
+//        editUrl.setText("https://www.beizimu.com/index.html");
+//        editIP.setText("120.24.48.119");
+
+//        editName.setText("https");
+//        editUrl.setText("https://www.beizimu.com:444/index.html");
+//        editIP.setText("120.24.48.119");
+
+//        editName.setText("http.set.Connection.Close");
+//        editUrl.setText("http://120.24.48.119/index.html");
+//        editIP.setText("120.24.48.119");
+
+//        editName.setText("http.NO.Connection.Close");
+//        editUrl.setText("http://120.24.48.119/index.html");
+//        editIP.setText("120.24.48.119");
+
+//        editName.setText("HTTPS.set.Connection.Close.and.NO.Session.Resumption");
+//        editUrl.setText("https://www.beizimu.com:440/index.html");
+//        editIP.setText("120.24.48.119");
+
+//        editName.setText("HTTPS.NO.Connection.Close.and.Session.Resumption");
+//        editUrl.setText("https://www.beizimu.com:441/index.html");
+//        editIP.setText("120.24.48.119");
+
+//        editName.setText("HTTP2.set.Connection.Close.and.NO.Session.Resumption");
+//        editUrl.setText("https://www.beizimu.com:442/index.html");
+//        editIP.setText("120.24.48.119");
+
+        editName.setText("HTTP2.NO.Connection.Close.and.Session.Resumption");
+        editUrl.setText("https://www.beizimu.com:443/index.html");
+        editIP.setText("120.24.48.119");
+
 
         btnAdd = (Button) findViewById(R.id.btnAdd);
         btnAdd.setOnClickListener(this);
@@ -66,9 +107,58 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         initOKHttpClient();
     }
 
+    ////////////////////////////////////////////////////////////////
+    private MyTrustManager mMyTrustManager;
+
+    private SSLSocketFactory createSSLSocketFactory() {
+        SSLSocketFactory ssfFactory = null;
+        try {
+            mMyTrustManager = new MyTrustManager();
+            SSLContext sc = SSLContext.getInstance("TLS");
+            sc.init(null, new TrustManager[]{mMyTrustManager}, new SecureRandom());
+            ssfFactory = sc.getSocketFactory();
+        } catch (Exception ignored) {
+            ignored.printStackTrace();
+        }
+
+        return ssfFactory;
+    }
+
+    //实现X509TrustManager接口
+    public class MyTrustManager implements X509TrustManager {
+        @Override
+        public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+        }
+
+        @Override
+        public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+        }
+
+        @Override
+        public X509Certificate[] getAcceptedIssuers() {
+            return new X509Certificate[0];
+        }
+    }
+
+    //实现HostnameVerifier接口
+    private class TrustAllHostnameVerifier implements HostnameVerifier {
+        @Override
+        public boolean verify(String hostname, SSLSession session) {
+            return true;
+        }
+    }
+
+    ////////////////////////////////////////////////////////////////
+
+
+
+
     private void initOKHttpClient() {
         OkHttpClient.Builder builder = new OkHttpClient().newBuilder();
         builder.dns(this);
+
+        builder.sslSocketFactory(createSSLSocketFactory(), mMyTrustManager)
+                .hostnameVerifier(new TrustAllHostnameVerifier());
 
         client = builder.build();
     }
@@ -83,9 +173,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
                 boolean bool = addTask(name, url, ip);
 
-                if (bool) {
-                    showReqTask();
-                }
+                showReqTask();
             }break;
             case R.id.btnRun:{
                 editName.setEnabled(false);
@@ -104,14 +192,20 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 } .start();
             }break;
             case R.id.btnStop:{
+                if (running == false) {
+                    return;
+                }
+                running = false;
+                printTaskInfo();
+
                 editName.setEnabled(true);
                 editUrl.setEnabled(true);
                 editIP.setEnabled(true);
-                running = false;
 
                 btnAdd.setEnabled(true);
                 btnRun.setEnabled(true);
                 btnStop.setEnabled(false);
+
             }break;
         }
     }
@@ -126,29 +220,46 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             requestUrl(reqCurrentBean);
             reqCurrentBean = null;
             System.gc();
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
+//            try {
+//                Thread.sleep(50);
+//            } catch (InterruptedException e) {
+//                e.printStackTrace();
+//            }
+        }
+
+
+        if (running) {
+            printTaskInfo();
         }
 
         running = false;
+    }
 
+    private void printTaskInfo() {
+        final StringBuilder sb = new StringBuilder();
         for (ReqBean bean : list) {
-            bean.printInfo();
+            String str = bean.printInfo();
+            sb.append(str);
 
             bean.clear();
         }
 
-
         txtInfo.post(new Runnable() {
             @Override
             public void run() {
-                onClick(btnStop);
+                txtInfo.setText(sb.toString());
+                editName.setEnabled(true);
+                editUrl.setEnabled(true);
+                editIP.setEnabled(true);
+
+                btnAdd.setEnabled(true);
+                btnRun.setEnabled(true);
+                btnStop.setEnabled(false);
+
             }
         });
     }
+
 
     private void requestUrl(ReqBean bean) {
         Request request = new Request.Builder().url(bean.url)
@@ -161,6 +272,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             long timeStart = System.currentTimeMillis();
             response = call.execute();
             int code = response.code();
+
+
             long timeRespCode = System.currentTimeMillis() - timeStart;
             long timeAll = 0;
             String httpProtocol = String.valueOf(response.protocol());
@@ -174,7 +287,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             } else {
                 bean.countFailed ++;
             }
-            Log.d("NetTest", "Task : " + reqCurrentBean.name);
+            Log.d("NetTest", "Task : " + reqCurrentBean.name + " success=" + reqCurrentBean.countSuccess + " failed=" + reqCurrentBean.countFailed + " all=" + reqCurrentBean.countTry);
             Log.d("NetTest", "code=" + code + " httpProtocol=" + httpProtocol);
             Log.d("NetTest", "time respCode=" + timeRespCode  + " all=" + timeAll + " str=" + str);
 
@@ -208,6 +321,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             }
         }
 
+        if (beanMinTry != null) {
+            Log.d("NetTest", "find " + beanMinTry.name + " try=" + beanMinTry.countTry
+                    + " success=" + beanMinTry.countSuccess + " failed=" + beanMinTry.countFailed);
+        } else {
+            Log.d("NetTest", "find null");
+        }
 
         return beanMinTry;
     }

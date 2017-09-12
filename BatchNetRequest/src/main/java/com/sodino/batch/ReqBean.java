@@ -62,16 +62,35 @@ public class ReqBean {
         }
     }
 
-    public void printInfo() {
+    public String printInfo() {
         int size = linkedList.size();
-        Log.d("NetTest", "name:" + name + " try:" + countTry + " success:" + countSuccess + " fail:" + countFailed + " host:" + host + " ip:" + ip + " url:" + url);
-        Log.d("NetTest", "time RespCode avg:" + (sumRespCode *1.0d/ size) + " max=" + maxRespCode + " min=" + minRespCode);
-        Log.d("NetTest", "time All avg:" + (sumTimeAll * 1.0d / size) + " max=" + maxTimeAll + " min=" + minTimeAll);
+        String strLog = null;
+
+        StringBuilder sb = new StringBuilder();
+        strLog = "name:" + name + " try:" + countTry + " success:" + countSuccess + " fail:" + countFailed + " host:" + host + " ip:" + ip + " url:" + url + "\n";
+        sb.append(strLog);
+        strLog = "time RespCode avg:" + (sumRespCode *1.0d/ size) + " max=" + maxRespCode + " min=" + minRespCode + "\n";
+        sb.append(strLog);
+        strLog = "time read content avg:" + ((sumTimeAll - sumRespCode) * 1.0d / size) + "\n";
+        sb.append(strLog);
+        strLog = "time All avg:" + (sumTimeAll * 1.0d / size) + " max=" + maxTimeAll + " min=" + minTimeAll + "\n";
+        sb.append(strLog);
+
+
+        Log.d("NetTest", sb.toString());
         Log.d("NetTest", "idx \t rsp \t read \t all");
+
+        String strFormat = "% 5d";
         for (int i = 0; i < size; i ++) {
             Pair<Long, Long> pair = linkedList.get(i);
-            Log.d("NetTest", i + " \t" + pair.first + " \t" + (pair.second - pair.first) + " \t" + pair.second);
+//            Log.d("NetTest", i + " \t" + pair.first + " \t" + (pair.second - pair.first) + " \t" + pair.second);
+            Log.d("NetTest", String.format(strFormat, i)
+                    + " \t" + String.format(strFormat, pair.first)
+                    + " \t" + String.format(strFormat, (pair.second - pair.first))
+                    + " \t" + String.format(strFormat, pair.second));
         }
+
+        return sb.toString();
     }
 
     public void clear() {

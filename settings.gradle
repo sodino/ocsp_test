@@ -1,1 +1,1 @@
-include ':interceptor', ':dns', ':dns', ':dns_ocsp', ':BatchNetRequest'
+include ':BatchNetRequest'
