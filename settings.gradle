@@ -1,1 +1,1 @@
-include ':BatchNetRequest'
+include ':BatchNetRequest', ':okhttp3_9_0', ':okio1_13_0'
